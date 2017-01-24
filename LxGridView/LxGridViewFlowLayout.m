@@ -16,18 +16,26 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
 
 @interface LxGridViewFlowLayout () <UIGestureRecognizerDelegate>
 
+/// getter overrided
 @property (nonatomic,readonly) id<LxGridViewDataSource> dataSource;
 @property (nonatomic,readonly) id<LxGridViewDelegateFlowLayout> delegate;
+
+/// getter setter overrided
 @property (nonatomic,assign) BOOL editing;
 
 @end
 
 @implementation LxGridViewFlowLayout
 {
+    // ges
     UILongPressGestureRecognizer * _longPressGestureRecognizer;
     UIPanGestureRecognizer * _panGestureRecognizer;
+    
+    // 当前正在移动的项
     NSIndexPath * _movingItemIndexPath;
     UIView * _beingMovedPromptView;
+    
+    // 正在拖拽的cell的中心
     CGPoint _sourceItemCollectionViewCellCenter;
     
     CADisplayLink * _displayLink;
@@ -36,6 +44,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
 
 #pragma mark - setup
 
+/// 移除手势 通知
 - (void)dealloc
 {
     [_displayLink invalidate];
@@ -60,17 +69,20 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
     return self;
 }
 
+/// 监听collectionView属性
 - (void)setup
 {
     [self addObserver:self forKeyPath:@stringify(collectionView) options:NSKeyValueObservingOptionNew context:nil];
 }
 
+/// longPressGestureRecognizerTriggerd _panGestureRecognizer UIApplicationWillResignActiveNotification
 - (void)addGestureRecognizers
 {
     self.collectionView.userInteractionEnabled = YES;
     
     _longPressGestureRecognizer = [[UILongPressGestureRecognizer alloc]initWithTarget:self action:@selector(longPressGestureRecognizerTriggerd:)];
     _longPressGestureRecognizer.cancelsTouchesInView = NO;
+    // 0.1秒就触发
     _longPressGestureRecognizer.minimumPressDuration = PRESS_TO_MOVE_MIN_DURATION;
     _longPressGestureRecognizer.delegate = self;
     
@@ -89,6 +101,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationWillResignActive:) name:UIApplicationWillResignActiveNotification object:nil];
 }
 
+/// 移除手势 通知
 - (void)removeGestureRecognizers
 {
     if (_longPressGestureRecognizer) {
@@ -136,6 +149,8 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
 
 #pragma mark - override UICollectionViewLayout methods
 
+/// 当前正在移动的是隐藏状态
+
 - (NSArray *)layoutAttributesForElementsInRect:(CGRect)rect
 {
     NSArray * layoutAttributesForElementsInRect = [super layoutAttributesForElementsInRect:rect];
@@ -177,33 +192,39 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
             break;
         case UIGestureRecognizerStateBegan:
         {
+            // 开启定时器
             if (_displayLink == nil) {
                 _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(displayLinkTriggered:)];
                 _displayLink.frameInterval = 6;
                 [_displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-                
+
                 _remainSecondsToBeginEditing = MIN_PRESS_TO_BEGIN_EDITING_DURATION;
             }
             
+            // 第一次触发 到这里就结束 然后 定时器的回调会将editing设为YES
             if (self.editing == NO) {
                 return;
             }
             
             _movingItemIndexPath = [self.collectionView indexPathForItemAtPoint:[longPress locationInView:self.collectionView]];
             
+            // 不能移动
             if ([self.dataSource respondsToSelector:@selector(collectionView:canMoveItemAtIndexPath:)] && [self.dataSource collectionView:self.collectionView canMoveItemAtIndexPath:_movingItemIndexPath] == NO) {
                 _movingItemIndexPath = nil;
                 return;
             }
             
+            // 即将开始拖动
             if ([self.delegate respondsToSelector:@selector(collectionView:layout:willBeginDraggingItemAtIndexPath:)]) {
                 [self.delegate collectionView:self.collectionView layout:self willBeginDraggingItemAtIndexPath:_movingItemIndexPath];
             }
             
+            // 取出目标cell+类型检查
             UICollectionViewCell * sourceCollectionViewCell = [self.collectionView cellForItemAtIndexPath:_movingItemIndexPath];
             NSCAssert([sourceCollectionViewCell isKindOfClass:[LxGridViewCell class]] || sourceCollectionViewCell == nil, @"LxGridViewFlowLayout: Must use LxGridViewCell as your collectionViewCell class!");
             LxGridViewCell * sourceGridViewCell = (LxGridViewCell *)sourceCollectionViewCell;
             
+            // 创建快照视图
             _beingMovedPromptView = [[UIView alloc]initWithFrame:CGRectOffset(sourceCollectionViewCell.frame, -LxGridView_DELETE_RADIUS, -LxGridView_DELETE_RADIUS)];
             
             sourceCollectionViewCell.highlighted = YES;
@@ -220,6 +241,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
             [_beingMovedPromptView addSubview:highlightedSnapshotView];
             [self.collectionView addSubview:_beingMovedPromptView];
             
+            // 快照视图添加震动动画
             static NSString * const kVibrateAnimation = @stringify(kVibrateAnimation);
             static CGFloat const VIBRATE_DURATION = 0.1;
             static CGFloat const VIBRATE_RADIAN = M_PI / 96;
@@ -233,8 +255,10 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
             vibrateAnimation.repeatCount = CGFLOAT_MAX;
             [_beingMovedPromptView.layer addAnimation:vibrateAnimation forKey:kVibrateAnimation];
             
+            // 移动的cell的center
             _sourceItemCollectionViewCellCenter = sourceCollectionViewCell.center;
             
+            // 动画0？。。。 通知代理开始拖拽
             typeof(self) __weak weakSelf = self;
             [UIView animateWithDuration:0
                                   delay:0
@@ -258,6 +282,8 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
                                      }
                                  }
                              }];
+            
+            // 重新布局 这样会使目标cell隐藏
             [self invalidateLayout];
         }
             break;
@@ -266,12 +292,14 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
         case UIGestureRecognizerStateEnded:
         case UIGestureRecognizerStateCancelled:
         {
+            // 取消定时器
             [_displayLink invalidate];
             _displayLink = nil;
             
             NSIndexPath * movingItemIndexPath = _movingItemIndexPath;
             
             if (movingItemIndexPath) {
+                /// 即将停止拖拽
                 if ([self.delegate respondsToSelector:@selector(collectionView:layout:willEndDraggingItemAtIndexPath:)]) {
                     [self.delegate collectionView:self.collectionView layout:self willEndDraggingItemAtIndexPath:movingItemIndexPath];
                 }
@@ -281,8 +309,10 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
                 
                 UICollectionViewLayoutAttributes * movingItemCollectionViewLayoutAttributes = [self layoutAttributesForItemAtIndexPath:movingItemIndexPath];
                 
+                // 动画的时候不触发长按手势
                 _longPressGestureRecognizer.enabled = NO;
                 
+                // 还原 然后移除cell的快照 invalidateLayout重新布局 调用代理方法
                 typeof(self) __weak weakSelf = self;
                 [UIView animateWithDuration:0
                                       delay:0
@@ -326,12 +356,15 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
         case UIGestureRecognizerStateBegan:
         case UIGestureRecognizerStateChanged:
         {
+            // 偏移
             CGPoint panTranslation = [pan translationInView:self.collectionView];
+            // 设置快照的中心
             _beingMovedPromptView.center = CGPointOffset(_sourceItemCollectionViewCellCenter, panTranslation.x, panTranslation.y);
             
             NSIndexPath * sourceIndexPath = _movingItemIndexPath;
             NSIndexPath * destinationIndexPath = [self.collectionView indexPathForItemAtPoint:_beingMovedPromptView.center];
             
+            // 是否可以替换
             if ((destinationIndexPath == nil) || [destinationIndexPath isEqual:sourceIndexPath]) {
                 return;
             }
@@ -339,12 +372,13 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
                 return;
             }
             
+            // 通知代理
             if ([self.dataSource respondsToSelector:@selector(collectionView:itemAtIndexPath:willMoveToIndexPath:)]) {
                 [self.dataSource collectionView:self.collectionView itemAtIndexPath:sourceIndexPath willMoveToIndexPath:destinationIndexPath];
             }
             
+            // 替换位置
             _movingItemIndexPath = destinationIndexPath;
-            
             typeof(self) __weak weakSelf = self;
             [self.collectionView performBatchUpdates:^{
                 typeof(self) __strong strongSelf = weakSelf;
@@ -371,6 +405,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
     }
 }
 
+/// 拖拽手势只有编辑时且_movingItemIndexPath不为空才触发
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
     if ([_panGestureRecognizer isEqual:gestureRecognizer] && self.editing) {
@@ -393,6 +428,8 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
 
 #pragma mark - displayLink
 
+// 定时器回调 6帧一次 长按手势触发时会开启定时器
+// _remainSecondsToBeginEditing - 0.1 直到小于0 editing设为YES 然后停止计时器
 - (void)displayLinkTriggered:(CADisplayLink *)displayLink
 {
     if (_remainSecondsToBeginEditing <= 0) {
@@ -407,6 +444,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
 
 #pragma mark - KVO and notification
 
+/// 添加/移除 手势、通知
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
 {
     if ([keyPath isEqualToString:@stringify(collectionView)]) {
@@ -419,6 +457,7 @@ CG_INLINE CGPoint CGPointOffset(CGPoint point, CGFloat dx, CGFloat dy)
     }
 }
 
+/// 停止手势再启用？
 - (void)applicationWillResignActive:(NSNotification *)notificaiton
 {
     _panGestureRecognizer.enabled = NO;

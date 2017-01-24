@@ -1,4 +1,4 @@
-//
+//!
 //  LxGridViewCell.m
 //  LxGridView
 //
@@ -177,6 +177,7 @@ static CGFloat const VIBRATE_RADIAN = M_PI / 96;
     [self.contentView addConstraints:@[centerXConstraint, titleLabelTopConstraint, titleLabelWidthConstraint, titleLabelHeightConstraint]];
 }
 
+// 删除点击事件
 - (void)setupEvents
 {
     [_deleteButton addTarget:self action:@selector(deleteButtonClicked:) forControlEvents:UIControlEventTouchUpInside];
@@ -191,6 +192,7 @@ static CGFloat const VIBRATE_RADIAN = M_PI / 96;
     }
 }
 
+// 是否在震动
 - (BOOL)vibrating
 {
     return [self.iconImageView.layer.animationKeys containsObject:kVibrateAnimation];
@@ -236,6 +238,7 @@ static CGFloat const VIBRATE_RADIAN = M_PI / 96;
     return _titleLabel.text;
 }
 
+// 截屏
 - (UIView *)snapshotView
 {
     UIView * snapshotView = [[UIView alloc]init];
@@ -244,6 +247,7 @@ static CGFloat const VIBRATE_RADIAN = M_PI / 96;
     UIView * deleteButtonSnapshotView = nil;
     
     if ([self respondsToSelector:@selector(snapshotViewAfterScreenUpdates:)]) {
+        // 删除按钮超出范围 所以不能直接截屏
         cellSnapshotView = [self snapshotViewAfterScreenUpdates:NO];
     }
     else {
@@ -265,8 +269,8 @@ static CGFloat const VIBRATE_RADIAN = M_PI / 96;
         deleteButtonSnapshotView = [[UIImageView alloc]initWithImage:deleteButtonSnapshotImage];
     }
     
-    snapshotView.frame = CGRectMake(-deleteButtonSnapshotView.frame.size.width / 2,
-                                    -deleteButtonSnapshotView.frame.size.height / 2,
+    snapshotView.frame = CGRectMake(0,//-deleteButtonSnapshotView.frame.size.width / 2,
+                                    0,//-deleteButtonSnapshotView.frame.size.height / 2,
                                     deleteButtonSnapshotView.frame.size.width / 2 + cellSnapshotView.frame.size.width,
                                     deleteButtonSnapshotView.frame.size.height / 2 + cellSnapshotView.frame.size.height);
     cellSnapshotView.frame = CGRectMake(deleteButtonSnapshotView.frame.size.width / 2,

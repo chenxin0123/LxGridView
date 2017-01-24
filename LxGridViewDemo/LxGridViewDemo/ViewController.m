@@ -180,6 +180,7 @@ static CGFloat const HOME_BUTTON_BOTTOM_MARGIN = 9;
     return cell;
 }
 
+/// 替换
 - (void)collectionView:(UICollectionView *)collectionView itemAtIndexPath:(NSIndexPath *)sourceIndexPath willMoveToIndexPath:(NSIndexPath *)destinationIndexPath
 {
     NSDictionary * dataDict = self.dataArray[sourceIndexPath.item];
@@ -187,6 +188,7 @@ static CGFloat const HOME_BUTTON_BOTTOM_MARGIN = 9;
     [self.dataArray insertObject:dataDict atIndex:destinationIndexPath.item];
 }
 
+/// 删除cell
 - (void)deleteButtonClickedInGridViewCell:(LxGridViewCell *)gridViewCell
 {
     NSIndexPath * gridViewCellIndexPath = [_gridView indexPathForCell:gridViewCell];
